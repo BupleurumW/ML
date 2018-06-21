@@ -9,14 +9,14 @@ class UserBasedCF:
         data = []
         for line in open(datafile):
             userid, itemid, record = line.strip('\n').split(",")
-            data.append((userid, itemid, float(record)))  # data列表存储用户id,电影id,得分
+            data.append((userid, itemid, float(record)))  # data列表存储用户id,物品id,得分
         self.data = data
         return data
 
     def cacheData(self):
-        self.userItemScore = dict()  # {用户：{电影1：评分，电影2：评分2}}
-        self.user_items = dict()  # {用户：set(看过的电影集合)}
-        self.item_users = dict()  # {电影：set(看过该电影的用户集合)}
+        self.userItemScore = dict()  # {用户：{物品1：评分，物品2：评分2}}
+        self.user_items = dict()  # {用户：set(看过的物品集合)}
+        self.item_users = dict()  # {物品：set(看过该物品的用户集合)}
         # 仅仅遍历一次数据，形成三个中间结果查询字典
         for user, item, rate in self.data:
             if user not in self.userItemScore:
@@ -28,130 +28,90 @@ class UserBasedCF:
             if user not in self.user_items:
                 self.user_items.setdefault(user, set())
             self.user_items[user].add(item)
-        '''
-        #寻找hotmovie
-        hotmovie={}
-        for i in self.item_users.keys():
-            hotmovie.setdefault(i,len(self.item_users[i]))
-        self.hotmovie=sorted(hotmovie.items(),key = lambda x : x[1],reverse = True)[0:20]
-        print self.hotmovie
-        '''
 
-    def itemSimBest(self, targetMovie, k):  # 设置目标电影，与返回的最相似电影个数
+    def itemSimBest(self, targetMovie, k):  # 设置目标物品，与返回的最相似物品个数
         self.targetMovie = targetMovie
-        # 计算每个targetmovie以外的电影与movie的相似度
-        simmj = dict()  # 存电影m与j的相似度
-        for j in self.item_users.keys():  # j为所有电影
+        # 计算每个targetmovie以外的物品与movie的相似度
+        simmj = dict()  # 存物品m与j的相似度
+        for j in self.item_users.keys():  # j为所有物品
             if j == targetMovie:
                 continue
-            umj = self.item_users[targetMovie] & self.item_users[j]  # 同时评论过电影mj的用户集合(交集)
-            # print(self.item_users[targetMovie])
-            # print(self.item_users[j])
-            # print("umj:")
-            # print(umj)
-            if umj == set([]): continue  # 如果没有用户共同评论电影mj则跳出本次循环
+            umj = self.item_users[targetMovie] & self.item_users[j]  # 同时评论过目标物品和物品j的用户交集
+            if umj == set([]): continue  # 如果没有用户共同评论物品j和目标物品则跳出本次循环
             # 中间结果计算，计算umj中每个用户给出评分的平均值
-            umjj = dict()  # umjj存对电影mj同时进行过评论的用户的平均分
+            umjj = dict()  # umjj存对物品mj同时进行过评论的用户的平均分
             for u in umj:
                 ucum = 0
                 for i in self.userItemScore[u].items():
-                    ucum += float(i[1])  # 所有电影得分相加
-                umean = ucum / len(self.userItemScore[u])  # 该用户评分总分/评论的电影数
-                umjj[u] = umean  # 用户评分平均分，加入字典
-                # print(str(u)+":"+str(umjj[u]))
-            # print(umjj)#与u共同评论了mj电影的用户v有····他们各自的平均评分为   {'75': 3.92, '92': 2.8545454545454545}
-            # 对相似度计算的分子
-            fenzi = fenmu1 = fenmu2 = 0
+                    ucum += float(i[1])  # 所有物品得分相加
+                umean = ucum / len(self.userItemScore[u])  # 该用户评分总分/评论的物品数
+                umjj[u] = umean  # 用户评分平均分
+            # 对相似度计算
+            child = mother1 = mother2 = 0
             for v in umj:  # i为用户
-                fenzi += (self.userItemScore[v][targetMovie] - umjj[v]) * (self.userItemScore[v][j] - umjj[v])
-                fenmu1 += pow(self.userItemScore[v][targetMovie] - umjj[v], 2)
-                fenmu2 += pow(self.userItemScore[v][j] - umjj[v], 2)
-            if fenmu1 * fenmu2 == 0:
+                child += (self.userItemScore[v][targetMovie] - umjj[v]) * (self.userItemScore[v][j] - umjj[v])
+                mother1 += pow(self.userItemScore[v][targetMovie] - umjj[v], 2)
+                mother2 += pow(self.userItemScore[v][j] - umjj[v], 2)
+            if mother1 * mother2 == 0:
                 simmj[j] = 0
             else:
-                sim = fenzi / (math.sqrt(fenmu1) * math.sqrt(fenmu2))
+                sim = child / (math.sqrt(mother1) * math.sqrt(mother2))
                 simmj[j] = sim  # m与j项目相似度为sim
-        # 字典排序，取出与m最相似的k个电影
+        # 字典排序，取出与m最相似的k个物品
         simmj = sorted(simmj.items(), key=lambda x: x[1], reverse=True)
-        # print(simmj)
-        # if len(simmj) < max(k):
-        #     print("K值不能大于simmmj集合的元素个数————simmj集合的个数为" + str((len(simmj))))
-        # simmjkDict = {}  # 存放不同k值，对应的最相似电影集合
-        # for i in k:
         simmjkDict = dict(simmj[0:k])
         return simmjkDict
 
     def userSimBest(self, simmjkDict, simk=0.00001):
-        # print("simmjkDict:")
-        # print(simmjkDict)
         self.rightSimTargetuuDict = {}  # 符合条件的目标用户与其多个相似用户的相似值
-        # for key in simmjkDict.keys():  # key就是topk这个列表
-        simmjk = simmjkDict#[key]
-        # print("simmjk:")
-        # print(simmjk)
+        simmjk = simmjkDict
         simmjk = set(simmjk.keys())  # 准备ci
-        #print(simmjk)
-        userm = list(self.item_users[self.targetMovie])  # 获取评论过目标电影的用户集合
-        rightSimTargetuu = {}  # 有的tagetu的ci为空集，所以需要找到ci不为空集的targetu结果如图
+        userm = list(self.item_users[self.targetMovie])  # 获取评论过目标物品的用户集合
+        rightSimTargetuu = {}  # 有的tagetu的ci为空集，所以需要找到ci不为空集的targetu
         for targetu in userm:  # 找到符合条件的targetu
             simtargetuu = {}  # 找到与tagetu最相似的几个用户
-            for u in userm:  # 评论过目标电影的集合
+            for u in userm:  # 评论过目标物品的集合
                 if targetu == u:
                     continue
                 ci = self.user_items[targetu] & self.user_items[u] & simmjk
-                # print("ci:")
-                # print(ci)
                 if len(ci) > 0:
                     cum = 0.0
                     for a in ci:
                         cum += pow((self.userItemScore[targetu][a] - self.userItemScore[u][a]), 2)
                     simtargetuu[u] = 1.0 - (cum * 1.0) / len(ci)
-                    # print("simtargetuu[u]:")
-                    # print(simtargetuu[u])
             if len(simtargetuu) != 0:
                 rightSimTargetuu[targetu] = simtargetuu
-        # print("rightSimTargetuu1:")
-        # print(rightSimTargetuu)
-        # print rightSimTargetuu
         # 因为ci设置过小，会使得有的用户相似度计算结果为负或者0这种相似度值当然不适合预测，所以需要去除奇异值
         for u in rightSimTargetuu.keys():
             for v in list(rightSimTargetuu[u]):
-                # for v in rightSimTargetuu[u].keys():
                 if rightSimTargetuu[u][v] < simk:
                     del rightSimTargetuu[u][v]  # 设定相似度阈值
-        for u in list(rightSimTargetuu):  # 删除{‘151’：{}}这样的空值
+        for u in list(rightSimTargetuu):
             if rightSimTargetuu[u] == {}:
                 del rightSimTargetuu[u]
-        # print 'del sim dic'
-        # print rightSimTargetuu
-        # self.rightSimTargetuu=rightSimTargetuu
-        # print("rightSimTargetuu:")
-        # print(rightSimTargetuu)
         if len(rightSimTargetuu) == 0:
-            print("没有匹配的相似用户，需要降低相似度阈值or增加K or 改变目标电影")
+            # print("没有匹配的相似用户，需要降低相似度阈值or增加K or 改变目标物品")
             return 0
         self.rightSimTargetuuDict = rightSimTargetuu
 
     def predictAndEvaluation(self):
         m = self.targetMovie
-        K_MAE_Dict = {}
-        # for key in self.rightSimTargetuuDict.keys():# rightSimTargetuuDict:存放不同K值下，符合条件的目标用户与其多个相似用户的相似值
-        rightSimTargetuu = self.rightSimTargetuuDict#[key]
-        # print(rightSimTargetuu)
+        rightSimTargetuu = self.rightSimTargetuuDict
         predictTargetScore = {}
         for u in rightSimTargetuu.keys():
-            fenzi = fenmu = 0.0
+            child = mother = 0.0
             for v in rightSimTargetuu[u].keys():
-                fenzi += rightSimTargetuu[u][v] * self.userItemScore[v][m]
-                fenmu += rightSimTargetuu[u][v]
+                child += rightSimTargetuu[u][v] * self.userItemScore[v][m]
+                mother += rightSimTargetuu[u][v]
 
-            predictTargetScore[u] = fenzi * 1.0 / fenmu
-            # test result
+            predictTargetScore[u] = child * 1.0 / mother
+
         cum = 0.0
         rating = 0.0
         for i in predictTargetScore.keys():
             cum += predictTargetScore[i]
         if len(predictTargetScore.keys()) == 0:
+            print("没找到")
             length = 0
             for u, r in self.userItemScore[self.targetMovie].items():
                 length += 1
@@ -174,28 +134,46 @@ def readTestSet(testfile):
 
 def testModel():
     trainfile = "trainingData.txt"
-    testfile = "testData4.txt"
+    # testfile = ["testData1.txt","testData2.txt","testData3.txt","testData4.txt","testData5.txt"]
+    testfile = "testData5.txt"
     cf = UserBasedCF(trainfile)
-    testSet = readTestSet(testfile)
-    print("正在测试"+testfile+"...")
-    MAE = 0
-    setSum = len(testSet)
-    length = setSum
-    # print(testSet)
-    for user,item,rating in testSet:
-        simmjkDict = cf.itemSimBest(targetMovie=item, k=200)  # 求目标电影的K-Top个最相似电影
-        flag = cf.userSimBest(simmjkDict, simk=0.00001)  # simk为用户相似度的阈值。根据你的相似度计算公式，用户相似度值大于0，即相似度很高，不建议修改该默认阈值
-        if(flag == 0):
-            setSum -= 1
-            continue
-        predict = cf.predictAndEvaluation()
-        print(user,item,rating,predict)
-        MAE += abs(predict - rating)
-    # print(setSum)
-    MAE = MAE / setSum
-    coverage = setSum/length
-    print("MAE:"+str(MAE))
-    print("coverage:" + str(coverage))
+    print("正在测试" + testfile + "...")
+    MAE = [0,0,0,0,0,0,0]
+    coverage = [0,0,0,0,0,0,0]
+    # l = len(testfile)
+    k = [100,125,150,180,200,220,250]
+    l = len(k)
+    for i in range(l):
+        testSet = readTestSet(testfile)
+        # print("正在测试"+testfile+"...")
+        setSum = len(testSet)
+        length = setSum
+        # print(testSet)
+        for user,item,rating in testSet:
+            simmjkDict = cf.itemSimBest(targetMovie=item, k=k[i])  # 求目标物品的K-Top个最相似物品
+            flag = cf.userSimBest(simmjkDict, simk=0.00001)  # simk为用户相似度的阈值
+            if(flag == 0):
+                setSum -= 1
+                continue
+            predict = cf.predictAndEvaluation()
+            # print(user,item,rating,predict)
+            MAE[i] += abs(predict - rating)
+        # print(setSum)
+        MAE[i] = MAE[i] / setSum
+        coverage[i] = setSum/length
+        # print("K = "+str(k[i])+"时：")
+        # print("MAE:"+str(MAE[i]))
+        # print("coverage:" + str(coverage[i]))
+    print(k)
+    print(MAE)
+    print(coverage)
+    # f = open('5.txt', 'w')
+    # f.write(str(k))
+    # f.write("\n")
+    # f.write(str(MAE))
+    # f.write("\n")
+    # f.write(str(coverage))
+    # f.close()
 
 if __name__ == "__main__":
     testModel()
